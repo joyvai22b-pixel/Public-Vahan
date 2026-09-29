@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Public Bahan - Realtime Transport System</title>
+  
+  <!-- Manifest & Web App Setup -->
+  <link rel="manifest" href="data:application/manifest+json,{
+    \"name\": \"Public Bahan\",
+    \"short_name\": \"PublicBahan\",
+    \"start_url\": \".\",
+    \"display\": \"standalone\",
+    \"background_color\": \"#0f172a\",
+    \"theme_color\": \"#0f172a\"
+  }">
+  <meta name="theme-color" content="#0f172a">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Leaflet Maps CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- HTML5 QR Code Scanner -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+
+  <style>
+    body { background-color: #0f172a; color: #f8fafc; font-family: sans-serif; }
+    #map { height: 350px; width: 100%; border-radius: 12px; z-index: 1; }
+    .badge-blue { background-color: #1d4ed8; color: #ffffff; }
+    .badge-green { background-color: #15803d; color: #ffffff; }
+    .badge-red { background-color: #b91c1c; color: #ffffff; }
+  </style>
+</head>
+<body class="pb-12">
+
+  <!-- 1. Splash Screen -->
+  <div id="splashScreen" class="fixed inset-0 bg-slate-900 z-50 flex flex-col items-center justify-center p-4">
+    <div class="text-center">
+      <img id="companyLogo" src="https://via.placeholder.com/150/0284c7/ffffff?text=PUBLIC+BAHAN" alt="Public Bahan Logo" class="w-32 h-32 mx-auto rounded-full shadow-2xl border-4 border-sky-500 mb-4 object-cover">
+      <h1 class="text-3xl font-extrabold text-sky-400 tracking-wider">PUBLIC BAHAN</h1>
+      <p class="text-slate-400 mt-2 text-sm">Smart Transport & Stand Management Platform</p>
+      <div class="mt-6 flex items-center justify-center space-x-2">
+        <div class="w-3 h-3 bg-sky-500 rounded-full animate-bounce"></div>
+        <div class="w-3 h-3 bg-sky-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+        <div class="w-3 h-3 bg-sky-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header Navigation -->
+  <header class="bg-slate-800 border-b border-slate-700 p-4 sticky top-0 z-40 flex justify-between items-center shadow-lg">
+    <div id="headerTitleArea" class="flex items-center space-x-3 cursor-pointer select-none">
+      <img id="navLogo" src="https://via.placeholder.com/150/0284c7/ffffff?text=PB" class="w-10 h-10 rounded-full border border-sky-400 object-cover">
+      <div>
+        <h1 class="font-bold text-lg text-sky-400">PUBLIC BAHAN <i class="fa-solid fa-circle-check text-blue-500 text-sm ml-1" title="Verified System"></i></h1>
+        <p class="text-xs text-slate-400">Live Vehicle Operations</p>
+      </div>
+    </div>
+    <button onclick="toggleScannerModal()" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 font-medium shadow">
+      <i class="fa-solid fa-qrcode"></i> Scan QR
+    </button>
+  </header>
+
+  <!-- Tab Navigation -->
+  <nav class="bg-slate-800/80 backdrop-blur border-b border-slate-700 sticky top-[73px] z-30">
+    <div class="flex justify-around text-sm font-semibold">
+      <button onclick="switchTab('customer')" id="tab-customer" class="py-3 px-2 text-sky-400 border-b-2 border-sky-400 flex-1 text-center"><i class="fa-solid fa-users mr-1"></i> Customer</button>
+      <button onclick="switchTab('stand')" id="tab-stand" class="py-3 px-2 text-slate-400 flex-1 text-center"><i class="fa-solid fa-bus mr-1"></i> Stand Admin</button>
+      <button onclick="switchTab('agent')" id="tab-agent" class="py-3 px-2 text-slate-400 flex-1 text-center"><i class="fa-solid fa-user-tie mr-1"></i> Agent</button>
+      <button onclick="switchTab('driver')" id="tab-driver" class="py-3 px-2 text-slate-400 flex-1 text-center"><i class="fa-solid fa-id-card mr-1"></i> Driver GPS</button>
+    </div>
+  </nav>
+
+  <!-- Main Content Container -->
+  <main class="max-w-4xl mx-auto p-4">
+
+    <!-- A. CUSTOMER PANEL -->
+    <section id="panel-customer" class="space-y-4">
+      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
+        <h2 class="text-lg font-bold mb-3 text-sky-400"><i class="fa-solid fa-magnifying-glass"></i> Search Vehicles & Stands</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block">Vehicle Category</label>
+            <select id="custCategory" onchange="filterCustomerVehicles()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
+              <option value="ALL">All Categories (Bus, Toto, Auto, Volvo, etc.)</option>
+              <option value="BUS">Bus / Mini Bus</option>
+              <option value="VOLVO">VIP / Volvo Bus</option>
+              <option value="AUTO">Auto Rickshaw</option>
+              <option value="TOTO">Toto / E-Rickshaw</option>
+              <option value="TRUCK">Lorry / Goods Vehicle</option>
+              <option value="TOUR">National Tour Bus</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block">Manual Location / Route Search</label>
+            <input type="text" id="custSearch" oninput="filterCustomerVehicles()" placeholder="E.g., Kolkata, Howrah, Siliguri..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm">
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Map View -->
+      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
+        <h3 class="text-md font-bold mb-2 flex justify-between items-center text-slate-200">
+          <span><i class="fa-solid fa-map-location-dot text-sky-400"></i> Live Route & Vehicle Movement</span>
+          <span class="text-xs text-green-400"><i class="fa-solid fa-satellite animate-pulse"></i> Realtime GPS</span>
+        </h3>
+        <div id="map"></div>
+      </div>
+
+      <!-- Vehicle List -->
+      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
+        <h3 class="text-md font-bold mb-3 text-slate-200"><i class="fa-solid fa-list-check"></i> Available Scheduled Vehicles</h3>
+        <div id="customerVehicleList" class="space-y-3">
+          <p class="text-slate-400 text-sm">Loading vehicle schedules...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- B. STAND MANAGER PANEL -->
+    <section id="panel-stand" class="space-y-4 hidden">
+      <!-- Subscription Alert Banner -->
+      <div id="subBanner" class="bg-slate-800 border border-amber-500/50 p-4 rounded-xl flex justify-between items-center">
+        <div>
+          <h4 class="font-bold text-amber-400 text-sm"><i class="fa-solid fa-triangle-exclamation"></i> Stand Subscription: ₹13/Day</h4>
+          <p class="text-xs text-slate-300">Daily plan ₹13 (₹390/month). Pay via UPI and submit proof.</p>
+        </div>
+        <button onclick="openSubscriptionModal()" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-3 py-2 rounded-lg">Renew Now</button>
+      </div>
+
+      <!-- Stand Registration / Info -->
+      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
+        <h3 class="text-md font-bold mb-3 text-sky-400"><i class="fa-solid fa-warehouse"></i> Stand Registration & Details</h3>
+        <form id="standRegForm" onsubmit="saveStandDetails(event)" class="space-y-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input type="text" id="standName" placeholder="Stand Name (e.g., Central Bus Terminus)" required class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm w-full">
+            <input type="text" id="standOwnerPhone" placeholder="Owner WhatsApp Phone" required class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm w-full">
+            <select id="standCategory" class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm w-full">
+              <option value="BUS">Bus Stand</option>
+              <option value="AUTO">Auto Stand</option>
+              <option value="TOTO">Toto Stand</option>
+              <option value="TRUCK">Lorry / Goods Stand</option>
+            </select>
+            <input type="text" id="standLogoUrl" placeholder="Stand Logo URL" class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm w-full">
+          </div>
+          <button type="submit" class="bg-sky-600 hover:bg-sky-500 w-full py-2.5 rounded-lg font-bold text-sm">Save Stand Info</button>
+        </form>
+      </div>
+
+      <!-- Add New Vehicle & Route -->
+      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
+        <h3 class="text-md font-bold mb-3 text-sky-400"><i class="fa-solid fa-bus text-sky-400"></i> Register Vehicle & Detailed Schedule</h3>
+        <form id="vehicleAddForm" onsubmit="addVehicleSchedule(event)" class="space-y-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input type="text" id="vehNumber" placeholder="Vehicle Registration No (e.g., WB-19-X-1234)" required class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm">
+            <input type="text" id="driverName" placeholder="Driver Name" required class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm">
+            <input type="tel" id="driverPhone" placeholder="Driver Phone Number" required class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm">
+            <input type="text" id="conductorName" placeholder="Conductor Name & Contact" class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm">
+            <input type="text" id="routeFrom" placeholder="Route Starts From" required class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm">
+            <input type="text" id="routeTo" placeholder="Route Final Destination" required class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm">
+            <input type="time" id="depTime" required class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm">
+            <input type="text" id="stoppages" placeholder="Intermediate Stoppages & Times" class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm">
+          </div>
+          <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 w-full py-2.5 rounded-lg font-bold text-sm"><i class="fa-solid fa-plus"></i> Submit & Activate Route</button>
+        </form>
+      </div>
+
+      <!-- Live Management Dashboard (In/Out Status) -->
+      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
+        <h3 class="text-md font-bold mb-3 text-slate-200"><i class="fa-solid fa-chart-line"></i> Live In/Out Management & Tracking</h3>
+        <div id="standLiveList" class="space-y-3">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </section>
+
+    <!-- C. AGENT PANEL -->
+    <section id="panel-agent" class="space-y-4 hidden">
+      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md text-center">
+        <h3 class="text-md font-bold text-sky-400"><i class="fa-solid fa-wallet"></i> Agent Earnings & Commission Wallet</h3>
+        <p class="text-3xl font-extrabold text-emerald-400 my-2">₹<span id="agentWalletBalance">0</span></p>
+        <p class="text-xs text-slate-400">Earn ₹2 daily per active subscribed stand onboarded by you.</p>
+        
+        <div class="mt-4 flex gap-2">
+          <input type="text" id="agentUpi" placeholder="Enter UPI ID for Payout" class="bg-slate-900 border border-slate-700 p-2 rounded-lg text-sm flex-1">
+          <button onclick="requestAgentPayout()" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm font-bold">Withdraw (Min ₹100)</button>
+        </div>
+      </div>
+
+      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
+        <h3 class="text-md font-bold mb-3 text-slate-200"><i class="fa-solid fa-users-gear"></i> Onboarded Stands & Pending Renewals</h3>
+        <div id="agentStandList" class="space-y-2 text-sm text-slate-300">
+          <p class="text-slate-500">No registered stands under your agent ID yet.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- D. DRIVER GPS PANEL -->
+    <section id="panel-driver" class="space-y-4 hidden">
+      <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md text-center space-y-4">
+        <h3 class="text-md font-bold text-sky-400"><i class="fa-solid fa-location-crosshairs"></i> Driver Live GPS Transmitter</h3>
+        <p class="text-xs text-slate-300">Keep this toggle ON during your daily duty. It transmits live GPS coordinates every 2 seconds to customers and stand managers.</p>
+        
+        <input type="text" id="driverDutyVehNo" placeholder="Enter Vehicle Registration No" class="bg-slate-900 border border-slate-700 p-2.5 rounded-lg text-sm w-full max-w-xs mx-auto block text-center">
+
+        <div class="flex justify-center items-center gap-4">
+          <button id="btnStartGps" onclick="startDriverGpsTracking()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg flex items-center gap-2">
+            <i class="fa-solid fa-play"></i> GO ONLINE (Start GPS)
+          </button>
+          <button id="btnStopGps" onclick="stopDriverGpsTracking()" disabled class="bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg flex items-center gap-2 opacity-50">
+            <i class="fa-solid fa-stop"></i> GO OFFLINE
+          </button>
+        </div>
+        <p id="gpsStatusText" class="text-xs text-slate-400 font-mono">Status: Offline</p>
+      </div>
+    </section>
+
+    <!-- E. SUPER ADMIN PANEL (HIDDEN - UNLOCKED VIA 7 CLICKS) -->
+    <section id="panel-admin" class="space-y-4 hidden">
+      <div class="bg-slate-800 border-2 border-red-500 p-4 rounded-xl shadow-2xl space-y-4">
+        <div class="flex justify-between items-center">
+          <h2 class="text-lg font-bold text-red-400"><i class="fa-solid fa-user-shield"></i> SUPER ADMIN PANEL (Public Bahan)</h2>
+          <span class="bg-red-500/20 text-red-400 text-xs px-2 py-1 rounded font-mono">AUTHENTICATED</span>
+        </div>
+
+        <!-- Metrics -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="bg-slate-900 p-3 rounded-lg border border-slate-700">
+            <p class="text-xs text-slate-400">Total Stands</p>
+            <p id="admTotalStands" class="text-xl font-bold text-sky-400">0</p>
+          </div>
+          <div class="bg-slate-900 p-3 rounded-lg border border-slate-700">
+            <p class="text-xs text-slate-400">Monthly Revenue</p>
+            <p id="admTotalRev" class="text-xl font-bold text-emerald-400">₹0</p>
+          </div>
+          <div class="bg-slate-900 p-3 rounded-lg border border-slate-700">
+            <p class="text-xs text-slate-400">Pending Payments</p>
+            <p id="admPendingPayments" class="text-xl font-bold text-amber-400">0</p>
+          </div>
+          <div class="bg-slate-900 p-3 rounded-lg border border-slate-700">
+            <p class="text-xs text-slate-400">System Mode</p>
+            <p class="text-xs font-bold text-emerald-400 mt-1"><i class="fa-solid fa-check-double"></i> Verified Active</p>
+          </div>
+        </div>
+
+        <!-- Subscription Proof Approvals -->
+        <div class="bg-slate-900 p-3 rounded-lg border border-slate-700">
+          <h4 class="font-bold text-sm text-slate-200 mb-2">Pending Subscription Proof Approvals</h4>
+          <div id="adminPaymentApprovalList" class="space-y-2 text-xs">
+            <p class="text-slate-500">No pending payments for approval.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL: In-App Camera Scanner -->
+  <div id="scannerModal" class="fixed inset-0 bg-black/90 z-50 flex flex-col items-center justify-center p-4 hidden">
+    <div class="bg-slate-800 rounded-xl p-4 w-full max-w-sm border border-slate-700 text-center relative">
+      <button onclick="toggleScannerModal()" class="absolute top-3 right-3 text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+      <h3 class="font-bold text-sky-400 mb-2"><i class="fa-solid fa-camera"></i> Scan Vehicle QR</h3>
+      <div id="qrReader" class="w-full overflow-hidden rounded-lg bg-black"></div>
+      <p class="text-xs text-slate-400 mt-2">Point camera at Vehicle/Stand QR code to automatically mark In/Out status.</p>
+    </div>
+  </div>
+
+  <!-- MODAL: Subscription Payment -->
+  <div id="subModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-800 rounded-xl p-5 w-full max-w-md border border-slate-700 space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+        <h3 class="font-bold text-amber-400"><i class="fa-solid fa-receipt"></i> Renew Stand Subscription</h3>
+        <button onclick="closeSubscriptionModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      
+      <div class="text-center space-y-2">
+        <p class="text-xs text-slate-300">Rate: <b>₹13 / Day</b> (₹10 Base + ₹3 System Fee)</p>
+        <div class="bg-white p-3 rounded-lg inline-block my-1">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=upi://pay?pa=8343088730@paytm&pn=PublicBahan" class="w-32 h-32 mx-auto" alt="UPI QR">
+        </div>
+        <p class="text-xs font-mono text-sky-400">UPI ID: 8343088730@paytm</p>
+      </div>
+
+      <form onsubmit="submitSubscriptionProof(event)" class="space-y-3 text-sm">
+        <div>
+          <label class="text-xs text-slate-400">Select Subscription Days</label>
+          <select id="subDays" onchange="calcSubAmount()" class="w-full bg-slate-900 border border-slate-700 p-2 rounded-lg text-sm">
+            <option value="30">30 Days (₹390)</option>
+            <option value="60">60 Days (₹780)</option>
+            <option value="365">1 Year (₹4,745)</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-slate-400">Total Amount to Pay</label>
+          <input type="text" id="subTotalAmount" value="₹390" readonly class="w-full bg-slate-900 border border-slate-700 p-2 rounded-lg font-bold text-emerald-400">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400">UPI Transaction / UTR Number</label>
+          <input type="text" id="subUtr" placeholder="E.g., 309482718293" required class="w-full bg-slate-900 border border-slate-700 p-2 rounded-lg">
+        </div>
+        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded-lg font-bold">Submit & Send WhatsApp Proof</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Javascript Logic -->
+  <script>
+    // -------------------------------------------------------------
+    // 1. FIREBASE INITIALIZATION
+    // -------------------------------------------------------------
+    const firebaseConfig = {
+      apiKey: "AIzaSyDJmu9uD5rT5ee1jNLpMQaTVIa_-yTrPzw",
+      authDomain: "public-service-11054.firebaseapp.com",
+      databaseURL: "https://public-service-11054-default-rtdb.firebaseio.com",
+      projectId: "public-service-11054",
+      storageBucket: "public-service-11054.firebasestorage.app",
+      messagingSenderId: "639313474404",
+      appId: "1:639313474404:web:9ac4645e521021c044c071",
+      measurementId: "G-ZMCRHQ4VC3"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // System Variables
+    const MAIN_WHATSAPP = "8343088730";
+    const ADMIN_PASS = "7876482550000";
+    let clickCount = 0;
+    let clickTimer = null;
+    let leafletMap = null;
+    let mapMarkers = {};
+    let html5QrScanner = null;
+    let driverWatchId = null;
+
+    // -------------------------------------------------------------
+    // 2. SPLASH SCREEN & VOICE DIALOGUE (HINDI)
+    // -------------------------------------------------------------
+    window.addEventListener('DOMContentLoaded', () => {
+      initMap();
+      playHindiVoice();
+      
+      setTimeout(() => {
+        const splash = document.getElementById('splashScreen');
+        splash.style.opacity = '0';
+        splash.style.transition = 'opacity 0.5s ease';
+        setTimeout(() => splash.classList.add('hidden'), 500);
+      }, 5000);
+
+      // Listen to Database Updates
+      listenToVehicles();
+      listenToStands();
+    });
+
+    function playHindiVoice() {
+      if ('speechSynthesis' in window) {
+        const text = "Public Bahan mein aapka swagat hai. Yeh West Bengal mein Joy ke dwara banaya gaya hai. Yahan aapko live tracking, stand management aur QR scanning ki suvidha milti hai.";
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'hi-IN';
+        utterance.rate = 0.9;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 3. HIDDEN SUPER ADMIN LOGIN (7 CLICKS)
+    // -------------------------------------------------------------
+    document.getElementById('headerTitleArea').addEventListener('click', () => {
+      clickCount++;
+      clearTimeout(clickTimer);
+      
+      if (clickCount === 7) {
+        clickCount = 0;
+        const pass = prompt("Enter Super Admin Security Password:");
+        if (pass === ADMIN_PASS) {
+          alert("Access Granted! Welcome Super Admin.");
+          document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));
+          document.getElementById('panel-admin').classList.remove('hidden');
+          loadAdminData();
+        } else if (pass !== null) {
+          alert("Incorrect Security Password!");
+        }
+      } else {
+        clickTimer = setTimeout(() => { clickCount = 0; }, 3000);
+      }
+    });
+
+    // -------------------------------------------------------------
+    // 4. TAB NAVIGATION
+    // -------------------------------------------------------------
+    function switchTab(tab) {
+      document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));
+      document.querySelectorAll('nav button').forEach(b => {
+        b.classList.remove('text-sky-400', 'border-b-2', 'border-sky-400');
+        b.classList.add('text-slate-400');
+      });
+
+      document.getElementById(`panel-${tab}`).classList.remove('hidden');
+      const activeBtn = document.getElementById(`tab-${tab}`);
+      activeBtn.classList.add('text-sky-400', 'border-b-2', 'border-sky-400');
+      activeBtn.classList.remove('text-slate-400');
+
+      if (tab === 'customer' && leafletMap) {
+        setTimeout(() => leafletMap.invalidateSize(), 200);
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 5. MAP & GPS LIVE TRACKING
+    // -------------------------------------------------------------
+    function initMap() {
+      // Default view over India / West Bengal center
+      leafletMap = L.map('map').setView([22.5726, 88.3639], 9);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(leafletMap);
+    }
+
+    function startDriverGpsTracking() {
+      const vehNo = document.getElementById('driverDutyVehNo').value.trim();
+      if (!vehNo) {
+        alert("Please enter your Vehicle Registration Number first!");
+        return;
+      }
+
+      if ("geolocation" in navigator) {
+        driverWatchId = navigator.geolocation.watchPosition((pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+
+          db.ref(`vehicles/${vehNo}/gps`).set({
+            lat: lat,
+            lng: lng,
+            updatedAt: Date.now(),
+            isOnline: true
+          });
+
+          document.getElementById('gpsStatusText').innerHTML = `<span class="text-green-400">● GPS Active: ${lat.toFixed(4)}, ${lng.toFixed(4)}</span>`;
+        }, (err) => {
+          alert("GPS Error: " + err.message);
+        }, {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+          timeout: 5000
+        });
+
+        document.getElementById('btnStartGps').disabled = true;
+        document.getElementById('btnStartGps').classList.add('opacity-50');
+        document.getElementById('btnStopGps').disabled = false;
+        document.getElementById('btnStopGps').classList.remove('opacity-50');
+      } else {
+        alert("Geolocation is not supported by your browser/device.");
+      }
+    }
+
+    function stopDriverGpsTracking() {
+      const vehNo = document.getElementById('driverDutyVehNo').value.trim();
+      if (driverWatchId) {
+        navigator.geolocation.clearWatch(driverWatchId);
+        driverWatchId = null;
+      }
+      if (vehNo) {
+        db.ref(`vehicles/${vehNo}/gps/isOnline`).set(false);
+      }
+      document.getElementById('gpsStatusText').innerText = "Status: Offline";
+      document.getElementById('btnStartGps').disabled = false;
+      document.getElementById('btnStartGps').classList.remove('opacity-50');
+      document.getElementById('btnStopGps').disabled = true;
+      document.getElementById('btnStopGps').classList.add('opacity-50');
+    }
+
+    // -------------------------------------------------------------
+    // 6. REALTIME DATABASE LISTENERS
+    // -------------------------------------------------------------
+    function listenToVehicles() {
+      db.ref('vehicles').on('value', (snapshot) => {
+        const data = snapshot.val() || {};
+        renderCustomerVehicleList(data);
+        renderStandLiveList(data);
+        updateMapMarkers(data);
+      });
+    }
+
+    function listenToStands() {
+      db.ref('stands').on('value', (snapshot) => {
+        const stands = snapshot.val() || {};
+        const count = Object.keys(stands).length;
+        document.getElementById('admTotalStands').innerText = count;
+      });
+    }
+
+    function renderCustomerVehicleList(vehicles) {
+      const listContainer = document.getElementById('customerVehicleList');
+      const cat = document.getElementById('custCategory').value;
+      const search = document.getElementById('custSearch').value.toLowerCase();
+      
+      listContainer.innerHTML = '';
+
+      let found = false;
+      Object.keys(vehicles).forEach(key => {
+        const v = vehicles[key];
+        const matchCat = (cat === 'ALL' || v.category === cat);
+        const matchSearch = (v.routeFrom?.toLowerCase().includes(search) || v.routeTo?.toLowerCase().includes(search) || v.number?.toLowerCase().includes(search));
+
+        if (matchCat && matchSearch) {
+          found = true;
+          const statusBadge = v.status === 'IN' 
+            ? '<span class="bg-emerald-500/20 text-emerald-400 text-xs px-2 py-0.5 rounded font-bold">AT STAND</span>'
+            : '<span class="bg-blue-500/20 text-blue-400 text-xs px-2 py-0.5 rounded font-bold">DEPARTED / ON ROUTE</span>';
+
+          const card = document.createElement('div');
+          card.className = "bg-slate-900 border border-slate-700 p-3 rounded-lg flex flex-col md:flex-row justify-between md:items-center gap-3";
+          card.innerHTML = `
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-sky-400">${v.number}</span>
+                ${statusBadge}
+              </div>
+              <p class="text-xs text-slate-300 mt-1"><i class="fa-solid fa-route text-slate-500"></i> ${v.routeFrom} ➔ ${v.routeTo} (Departs: ${v.depTime || 'N/A'})</p>
+              <p class="text-xs text-slate-400 mt-0.5"><i class="fa-solid fa-user"></i> Driver: ${v.driverName} (${v.driverPhone})</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <a href="tel:${v.driverPhone}" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 px-3 py-1.5 rounded text-xs font-bold text-sky-400"><i class="fa-solid fa-phone"></i> Call Driver</a>
+              <button onclick="focusVehicleOnMap('${v.number}')" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded text-xs font-bold"><i class="fa-solid fa-crosshairs"></i> Track Live</button>
+            </div>
+          `;
+          listContainer.appendChild(card);
+        }
+      });
+
+      if (!found) {
+        listContainer.innerHTML = `<p class="text-xs text-slate-500">No vehicles match your current search filter.</p>`;
+      }
+    }
+
+    function renderStandLiveList(vehicles) {
+      const container = document.getElementById('standLiveList');
+      container.innerHTML = '';
+
+      Object.keys(vehicles).forEach(key => {
+        const v = vehicles[key];
+        const card = document.createElement('div');
+        card.className = "bg-slate-900 border border-slate-700 p-3 rounded-lg flex justify-between items-center";
+        card.innerHTML = `
+          <div>
+            <p class="font-bold text-sm text-slate-200">${v.number} <span class="text-xs font-normal text-slate-400">(${v.driverName})</span></p>
+            <p class="text-xs text-slate-400">${v.routeFrom} ➔ ${v.routeTo}</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="markInOut('${v.number}', 'IN')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-2.5 py-1 rounded font-bold">IN</button>
+            <button onclick="markInOut('${v.number}', 'OUT')" class="bg-red-600 hover:bg-red-500 text-white text-xs px-2.5 py-1 rounded font-bold">OUT</button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function updateMapMarkers(vehicles) {
+      Object.keys(vehicles).forEach(key => {
+        const v = vehicles[key];
+        if (v.gps && v.gps.lat && v.gps.lng) {
+          if (mapMarkers[key]) {
+            mapMarkers[key].setLatLng([v.gps.lat, v.gps.lng]);
+          } else {
+            const marker = L.marker([v.gps.lat, v.gps.lng]).addTo(leafletMap)
+              .bindPopup(`<b>${v.number}</b><br>Route: ${v.routeFrom} to ${v.routeTo}`);
+            mapMarkers[key] = marker;
+          }
+        }
+      });
+    }
+
+    function focusVehicleOnMap(vehNo) {
+      if (mapMarkers[vehNo]) {
+        leafletMap.setView(mapMarkers[vehNo].getLatLng(), 14);
+        mapMarkers[vehNo].openPopup();
+        window.scrollTo({ top: 150, behavior: 'smooth' });
+      } else {
+        alert("Live GPS is currently offline for this vehicle.");
+      }
+    }
+
+    function markInOut(vehNo, status) {
+      db.ref(`vehicles/${vehNo}/status`).set(status);
+      db.ref(`vehicles/${vehNo}/lastUpdated`).set(Date.now());
+      alert(`Vehicle ${vehNo} marked as ${status}`);
+    }
+
+    // -------------------------------------------------------------
+    // 7. FORM SUBMISSIONS & FIREBASE WRITE
+    // -------------------------------------------------------------
+    function saveStandDetails(e) {
+      e.preventDefault();
+      const name = document.getElementById('standName').value.trim();
+      const phone = document.getElementById('standOwnerPhone').value.trim();
+      const category = document.getElementById('standCategory').value;
+      const logo = document.getElementById('standLogoUrl').value.trim();
+
+      db.ref(`stands/${phone}`).set({
+        name, phone, category, logo,
+        subscribed: false,
+        createdAt: Date.now()
+      });
+
+      alert("Stand information saved successfully!");
+    }
+
+    function addVehicleSchedule(e) {
+      e.preventDefault();
+      const number = document.getElementById('vehNumber').value.trim().toUpperCase();
+      const driverName = document.getElementById('driverName').value.trim();
+      const driverPhone = document.getElementById('driverPhone').value.trim();
+      const conductorName = document.getElementById('conductorName').value.trim();
+      const routeFrom = document.getElementById('routeFrom').value.trim();
+      const routeTo = document.getElementById('routeTo').value.trim();
+      const depTime = document.getElementById('depTime').value;
+      const stoppages = document.getElementById('stoppages').value.trim();
+
+      db.ref(`vehicles/${number}`).set({
+        number, driverName, driverPhone, conductorName,
+        routeFrom, routeTo, depTime, stoppages,
+        status: 'IN',
+        category: 'BUS',
+        updatedAt: Date.now()
+      });
+
+      alert("Vehicle Schedule Registered!");
+      document.getElementById('vehicleAddForm').reset();
+    }
+
+    // -------------------------------------------------------------
+    // 8. CAMERA SCANNER MODAL
+    // -------------------------------------------------------------
+    function toggleScannerModal() {
+      const modal = document.getElementById('scannerModal');
+      modal.classList.toggle('hidden');
+
+      if (!modal.classList.contains('hidden')) {
+        html5QrScanner = new Html5QrcodeScanner("qrReader", { fps: 10, qrbox: 250 });
+        html5QrScanner.render((decodedText) => {
+          alert("Scanned Code: " + decodedText);
+          html5QrScanner.clear();
+          toggleScannerModal();
+        });
+      } else if (html5QrScanner) {
+        html5QrScanner.clear();
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 9. SUBSCRIPTION & WHATSAPP REDIRECT
+    // -------------------------------------------------------------
+    function openSubscriptionModal() { document.getElementById('subModal').classList.remove('hidden'); }
+    function closeSubscriptionModal() { document.getElementById('subModal').classList.add('hidden'); }
+
+    function calcSubAmount() {
+      const days = document.getElementById('subDays').value;
+      document.getElementById('subTotalAmount').value = `₹${days * 13}`;
+    }
+
+    function submitSubscriptionProof(e) {
+      e.preventDefault();
+      const days = document.getElementById('subDays').value;
+      const amount = days * 13;
+      const utr = document.getElementById('subUtr').value.trim();
+      const standName = document.getElementById('standName').value || "My Bus Stand";
+
+      const msg = encodeURIComponent(`Hello Public Bahan Admin,\nI have paid ₹${amount} for ${days} days stand subscription.\nStand Name: ${standName}\nUTR/Transaction ID: ${utr}\nPlease activate my subscription.`);
+      
+      window.open(`https://wa.me/91${MAIN_WHATSAPP}?text=${msg}`, '_blank');
+      closeSubscriptionModal();
+      alert("Subscription request sent! Activation pending admin review.");
+    }
+
+    function filterCustomerVehicles() {
+      db.ref('vehicles').once('value', snapshot => {
+        renderCustomerVehicleList(snapshot.val() || {});
+      });
+    }
+
+    function loadAdminData() {
+      db.ref('vehicles').once('value', snapshot => {
+        const v = snapshot.val() || {};
+        document.getElementById('admTotalRev').innerText = `₹${Object.keys(v).length * 390}`;
+      });
+    }
+  </script>
+</body>
+</html>
